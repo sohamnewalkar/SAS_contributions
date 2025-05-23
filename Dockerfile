@@ -1,0 +1,17 @@
+FROM alpine
+RUN apk add nginx bash supervisor rsyslog && rm -rf /etc/nginx && mkdir /etc/nginx /var/spool/rsyslog
+WORKDIR /etc/nginx
+COPY ./kubernetes/nginx/nginxconf/. .
+RUN mkdir -p /etc/ssl/private /etc/ssl/certs
+COPY kubernetes/ssl/certs/. /etc/ssl/certs
+COPY kubernetes/ssl/private/. /etc/ssl/private
+COPY kubernetes/rsyslog/rsyslog.conf /etc/rsyslog.conf
+COPY kubernetes/supervisor/supervisord.conf /etc/supervisord.conf
+COPY scripts/container/entrypoint.sh /entrypoint.sh
+COPY scripts/container/servicecheck.sh /servicecheck.sh
+WORKDIR /var/www/html
+COPY kubernetes/nginx/www/. .
+RUN chmod +x /entrypoint.sh /servicecheck.sh
+EXPOSE 80
+EXPOSE 443
+ENTRYPOINT ["/entrypoint.sh"]

@@ -1,0 +1,260 @@
+stages:
+  - test
+  - build
+  - deploy
+core_test:
+  stage: test
+  needs: []
+  image: azuseleveragedacr.azurecr.io/nginx:latest
+  rules:
+    - changes:
+        - Dockerfile
+        - scripts/container/*
+        - kubernetes/nginx/nginxconf/*
+        - kubernetes/nginx/default.d/*
+        - kubernetes/rsyslog/*
+        - kubernetes/supervisor/*
+        - kubernetes/ssl/*
+  script:
+    - rm -rfv /etc/nginx
+    - rm -rfv /etc/ssl/private
+    - rm -rfv /etc/ssl/certs
+    - rm -rfv /var/www/html/*
+    - mkdir -pv /etc/nginx/acls /etc/nginx/conf.d /etc/nginx/default.d /etc/ssl/private /etc/ssl/certs /etc/nginx/ssl
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/nginxconf/* /etc/nginx/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/www/* /var/www/html
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/ssl/certs/* /etc/ssl/certs
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/ssl/private/* /etc/ssl/private
+    - nginx -t
+core_build:
+  stage: build
+  needs:
+    - core_test
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [ "" ]
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master"'
+      changes:
+        - Dockerfile
+        - scripts/container/*
+        - kubernetes/nginx/nginxconf/*
+        - kubernetes/nginx/default.d/*
+        - kubernetes/rsyslog/*
+        - kubernetes/supervisor/*
+  script:
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"azuseleveragedacr.azurecr.io\":{\"auth\":\"$(echo -n ${ACR_USER}:${ACR_PASS} | base64 | tr -d "\n")\"}}}" > /kaniko/.docker/config.json
+    - /kaniko/executor --context $CI_PROJECT_DIR --dockerfile $CI_PROJECT_DIR/Dockerfile --destination azuseleveragedacr.azurecr.io/nginx:latest
+core_deploy:
+  stage: deploy
+  needs:
+    - core_build
+  image: mcr.microsoft.com/azure-cli:latest
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master"'
+      changes:
+        - Dockerfile
+        - scripts/container/*
+        - kubernetes/nginx/nginxconf/*
+        - kubernetes/nginx/default.d/*
+        - kubernetes/rsyslog/*
+        - kubernetes/supervisor/*
+  script:
+    - scripts/cicd/deploy-all-azure.sh
+
+.aks_test:
+  stage: test
+  needs: []
+  image: azuseleveragedacr.azurecr.io/nginx:latest
+  rules:
+    - changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+  script:
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/default.d /etc/nginx/default.d
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/acls/${CI_BUILD_SITE}_acls /etc/nginx/acls
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd /etc/nginx/conf.d
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl /etc/nginx/ssl
+    - nginx -t
+.aks_deploy:
+  stage: deploy
+  image: mcr.microsoft.com/azure-cli:latest
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master"'
+      changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+.aks_deploy_nopub:
+  extends: .aks_deploy
+  script:
+    - scripts/cicd/deployaks.sh ${CI_BUILD_SITE}
+.aks_deploy_withpub:
+  extends: .aks_deploy
+  script:
+    - scripts/cicd/deployaks_withpub.sh ${CI_BUILD_SITE}
+
+azuse_test:
+  extends: .aks_test
+  variables:
+    CI_BUILD_SITE: "azuse"
+azuse_deploy:
+  extends: .aks_deploy_nopub
+  needs:
+    - azuse_test
+  variables:
+    CI_BUILD_SITE: "azuse"
+azaue_test:
+  extends: .aks_test
+  variables:
+    CI_BUILD_SITE: "azaue"
+azaue_deploy:
+  extends: .aks_deploy_nopub
+  needs:
+    - azaue_test
+  variables:
+    CI_BUILD_SITE: "azaue"
+azuks_test:
+  extends: .aks_test
+  variables:
+    CI_BUILD_SITE: "azuks"
+azuks_deploy:
+  extends: .aks_deploy_nopub
+  needs:
+    - azuks_test
+  variables:
+    CI_BUILD_SITE: "azuks"
+azbrs_test:
+  extends: .aks_test
+  variables:
+    CI_BUILD_SITE: "azbrs"
+azbrs_deploy:
+  extends: .aks_deploy_nopub
+  needs:
+    - azbrs_test
+  variables:
+    CI_BUILD_SITE: "azbrs"
+azdewc_test:
+  extends: .aks_test
+  variables:
+    CI_BUILD_SITE: "azdewc"
+azdewc_deploy:
+  extends: .aks_deploy_nopub
+  needs:
+    - azdewc_test
+  variables:
+    CI_BUILD_SITE: "azdewc"
+azcac_test:
+  extends: .aks_test
+  variables:
+    CI_BUILD_SITE: "azcac"
+azcac_deploy:
+  extends: .aks_deploy_nopub
+  needs:
+    - azcac_test
+  variables:
+    CI_BUILD_SITE: "azcac"
+azsea_test:
+  extends: .aks_test
+  variables:
+    CI_BUILD_SITE: "azsea"
+azsea_deploy:
+  extends: .aks_deploy_nopub
+  needs:
+    - azsea_test
+  variables:
+    CI_BUILD_SITE: "azsea"
+azcae_test:
+  extends: .aks_test
+  variables:
+    CI_BUILD_SITE: "azcae"
+azcae_deploy:
+  extends: .aks_deploy_nopub
+  needs:
+    - azcae_test
+  variables:
+    CI_BUILD_SITE: "azcae"
+azjpe_test:
+  extends: .aks_test
+  variables:
+    CI_BUILD_SITE: "azjpe"
+azjpe_deploy:
+  extends: .aks_deploy_nopub
+  needs:
+    - azjpe_test
+  variables:
+    CI_BUILD_SITE: "azjpe"
+aznwe_test:
+  extends: .aks_test
+  variables:
+    CI_BUILD_SITE: "aznwe"
+aznwe_deploy:
+  extends: .aks_deploy_nopub
+  needs:
+    - aznwe_test
+  variables:
+    CI_BUILD_SITE: "aznwe"
+azinc_test:
+  extends: .aks_test
+  variables:
+    CI_BUILD_SITE: "azinc"
+azinc_deploy:
+  extends: .aks_deploy_nopub
+  needs:
+    - azinc_test
+  variables:
+    CI_BUILD_SITE: "azinc"
+azusw3_test:
+  extends: .aks_test
+  variables:
+    CI_BUILD_SITE: "azusw3"
+azusw3_deploy:
+  extends: .aks_deploy_nopub
+  needs:
+    - azusw3_test
+  variables:
+    CI_BUILD_SITE: "azusw3"
+azuan_test:
+  extends: .aks_test
+  variables:
+    CI_BUILD_SITE: "azuan"
+azuan_deploy:
+  extends: .aks_deploy_nopub
+  needs:
+    - azuan_test
+  variables:
+    CI_BUILD_SITE: "azuan"
+azeahk_test:
+  extends: .aks_test
+  variables:
+    CI_BUILD_SITE: "azeahk"
+azeahk_deploy:
+  extends: .aks_deploy_nopub
+  needs:
+    - azeahk_test
+  variables:
+    CI_BUILD_SITE: "azeahk"
+azsan_test:
+  extends: .aks_test
+  variables:
+    CI_BUILD_SITE: "azsan"
+azsan_deploy:
+  extends: .aks_deploy_nopub
+  needs:
+    - azsan_test
+  variables:
+    CI_BUILD_SITE: "azsan"
+azqtc_test:
+  extends: .aks_test
+  variables:
+    CI_BUILD_SITE: "azqtc"
+azqtc_deploy:
+  extends: .aks_deploy_nopub
+  needs:
+    - azqtc_test
+  variables:
+    CI_BUILD_SITE: "azqtc"
+
+
