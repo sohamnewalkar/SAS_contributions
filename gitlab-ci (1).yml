@@ -1,0 +1,512 @@
+stages:
+   - core_test
+   - core_build
+   - core_deploy
+   - awsca_test
+   - awsca_deploy
+   - awsjkt_test
+   - awsjkt_deploy
+   - awssg_test
+   - awssg_deploy
+   - awspar_test
+   - awspar_deploy
+   - awsir_test
+   - awsir_deploy
+   - awssyd_test
+   - awssyd_deploy
+   - saa01_test
+   - saa01_deploy
+   - eua03_test
+   - eua03_deploy
+   - awsva_test
+   - awsva_deploy
+   - awstok_test
+   - awstok_deploy
+  
+core_test:
+ stage: core_test
+ tags:
+   - gitlab-runner1-k8s
+ needs: []
+ image: 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+  
+ rules:
+   - changes:
+       - Dockerfile
+       - scripts/container/*
+       - kubernetes/nginx/nginxconf/*
+       - kubernetes/nginx/default.d/*
+       - kubernetes/rsyslog/*
+       - kubernetes/supervisor/*
+       - kubernetes/ssl/certs/*
+       - kubernetes/ssl/private/*
+ script:
+   - mkdir -p /var/www/html
+   - rm -rfv /etc/nginx
+   - rm -rfv /etc/ssl/private
+   - rm -rfv /etc/ssl/certs
+   - rm -rfv /var/www/html/*
+   - mkdir -pv /etc/nginx/acls /etc/nginx/conf.d /etc/nginx/default.d /etc/ssl/private /etc/ssl/certs /etc/nginx/ssl
+   - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/nginxconf/* /etc/nginx/
+   - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/www/* /var/www/html/
+   - cp -rv ${CI_PROJECT_DIR}/kubernetes/ssl/certs/* /etc/ssl/certs
+   - cp -rv ${CI_PROJECT_DIR}/kubernetes/ssl/private/* /etc/ssl/private
+   - nginx -t
+
+core_build:
+  stage: core_build
+  needs:
+    - core_test
+  tags:
+    - gitlab-runner1-shell
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - Dockerfile
+        - scripts/container/*
+        - kubernetes/nginx/nginxconf/*
+        - kubernetes/nginx/default.d/*
+        - kubernetes/rsyslog/*
+        - kubernetes/supervisor/*
+        - kubernetes/ssl/certs/*
+        - kubernetes/ssl/private/*
+
+  script:
+    - sudo systemctl restart docker
+    - sleep 5
+    - docker build -t nginx .
+    - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 402192950540.dkr.ecr.us-east-1.amazonaws.com
+    - docker tag nginx 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+    - docker push 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+
+core_deploy:
+  stage: core_deploy
+  needs:
+    - core_build
+  tags:
+    - gitlab-runner1-shell
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - Dockerfile
+        - scripts/container/*
+        - kubernetes/nginx/nginxconf/*
+        - kubernetes/nginx/default.d/*
+        - kubernetes/rsyslog/*
+        - kubernetes/supervisor/*
+        - kubernetes/ssl/certs/*
+        - kubernetes/ssl/private/*
+
+  script:
+    - chmod +x scripts/cicd/deploy-all-eks.sh
+    - ./scripts/cicd/deploy-all-eks.sh
+
+#-------------- awsca -----------------------------------
+
+awsca_test:
+  stage: awsca_test
+  tags:
+    - gitlab-runner1-k8s
+  image: 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+  variables:
+    CI_BUILD_SITE: "awsca"
+  rules:
+    - changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+  script:
+    - mkdir -p /etc/nginx/default.d /etc/nginx/conf.d/awsca_confd /etc/nginx/ssl/awsca_ssl
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/default.d /etc/nginx/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/acls/${CI_BUILD_SITE}_acls /etc/nginx/acls/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd /etc/nginx/conf.d/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl /etc/nginx/ssl
+    - nginx -t
+awsca_deploy:
+  stage: awsca_deploy
+  tags:
+    - gitlab-runner1-shell
+  image: 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+  needs:
+    - awsca_test
+  variables:
+    CI_BUILD_SITE: "awsca"
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+  script:
+    - chmod +x scripts/cicd/deployeks.sh
+    - ./scripts/cicd/deployeks.sh awsca us-west-1
+
+#-------------- awsjkt -----------------------------------
+
+awsjkt_test:
+  stage: awsjkt_test
+  tags:
+    - gitlab-runner1-k8s
+  image: 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+  variables:
+    CI_BUILD_SITE: "awsjkt"
+  rules:
+    - changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+  script:
+    - mkdir -p /etc/nginx/default.d /etc/nginx/conf.d/awsjkt_confd /etc/nginx/ssl/awsjkt_ssl
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/default.d /etc/nginx/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/acls/${CI_BUILD_SITE}_acls /etc/nginx/acls/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd /etc/nginx/conf.d/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl /etc/nginx/ssl
+    - nginx -t
+awsjkt_deploy:
+  stage: awsjkt_deploy
+  tags:
+    - gitlab-runner1-shell
+  image: 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+  needs:
+    - awsjkt_test
+  variables:
+    CI_BUILD_SITE: "awsjkt"
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+  script:
+    - chmod +x scripts/cicd/deployeks.sh
+    - ./scripts/cicd/deployeks.sh awsjkt ap-southeast-3
+
+#-------------- awssg -----------------------------------
+
+awssg_test:
+  stage: awssg_test
+  tags:
+    - gitlab-runner1-k8s
+  image: 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+  variables:
+    CI_BUILD_SITE: "awssg"
+  rules:
+    - changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+  script:
+    - mkdir -p /etc/nginx/default.d /etc/nginx/conf.d/awssg_confd /etc/nginx/ssl/awssg_ssl
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/default.d /etc/nginx/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/acls/${CI_BUILD_SITE}_acls /etc/nginx/acls/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd /etc/nginx/conf.d/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl /etc/nginx/ssl
+    - nginx -t
+awssg_deploy:
+  stage: awssg_deploy
+  tags:
+    - gitlab-runner1-shell
+  image: 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+  needs:
+    - awssg_test
+  variables:
+    CI_BUILD_SITE: "awssg"
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+  script:
+    - chmod +x scripts/cicd/deployeks.sh
+    - ./scripts/cicd/deployeks.sh awssg ap-southeast-1
+
+#-------------- awspar -----------------------------------
+
+awspar_test:
+  stage: awspar_test
+  tags:
+    - gitlab-runner1-k8s
+  image: 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+  variables:
+    CI_BUILD_SITE: "awspar"
+  rules:
+    - changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+  script:
+    - mkdir -p /etc/nginx/default.d /etc/nginx/conf.d/awspar_confd /etc/nginx/ssl/awspar_ssl
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/default.d /etc/nginx/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/acls/${CI_BUILD_SITE}_acls /etc/nginx/acls/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd /etc/nginx/conf.d/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl /etc/nginx/ssl
+    - nginx -t
+awspar_deploy:
+  stage: awspar_deploy
+  tags:
+    - gitlab-runner1-shell
+  image: 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+  needs:
+    - awspar_test
+  variables:
+    CI_BUILD_SITE: "awspar"
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+  script:
+    - chmod +x scripts/cicd/deployeks.sh
+    - ./scripts/cicd/deployeks.sh awspar eu-west-3
+    
+#-------------- awsir -----------------------------------
+
+awsir_test:
+  stage: awsir_test
+  tags:
+    - gitlab-runner1-k8s
+  image: 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+  variables:
+    CI_BUILD_SITE: "awsir"
+  rules:
+    - changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+  script:
+    - mkdir -p /etc/nginx/default.d /etc/nginx/conf.d/awsir_confd /etc/nginx/ssl/awsir_ssl
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/default.d /etc/nginx/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/acls/${CI_BUILD_SITE}_acls /etc/nginx/acls/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd /etc/nginx/conf.d/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl /etc/nginx/ssl
+    - nginx -t
+awsir_deploy:
+  stage: awsir_deploy
+  tags:
+    - gitlab-runner1-shell
+  image: 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+  needs:
+    - awsir_test
+  variables:
+    CI_BUILD_SITE: "awsir"
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+  script:
+    - chmod +x scripts/cicd/deployeks.sh
+    - ./scripts/cicd/deployeks.sh awsir eu-west-1
+
+#-------------- awssyd -----------------------------------
+
+awssyd_test:
+  stage: awssyd_test
+  tags:
+    - gitlab-runner1-k8s
+  image: 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+  variables:
+    CI_BUILD_SITE: "awssyd"
+  rules:
+    - changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+  script:
+    - mkdir -p /etc/nginx/default.d /etc/nginx/conf.d/awssyd_confd /etc/nginx/ssl/awssyd_ssl
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/default.d /etc/nginx/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/acls/${CI_BUILD_SITE}_acls /etc/nginx/acls/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd /etc/nginx/conf.d/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl /etc/nginx/ssl
+    - nginx -t
+awssyd_deploy:
+  stage: awssyd_deploy
+  tags:
+    - gitlab-runner1-shell
+  image: 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+  needs:
+    - awssyd_test
+  variables:
+    CI_BUILD_SITE: "awssyd"
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+  script:
+    - chmod +x scripts/cicd/deployeks.sh
+    - ./scripts/cicd/deployeks.sh awssyd ap-southeast-2
+
+#-------------- saa01 -----------------------------------
+
+saa01_test:
+  stage: saa01_test
+  tags:
+    - gitlab-runner1-k8s
+  image: 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+  variables:
+    CI_BUILD_SITE: "saa01"
+  rules:
+    - changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+  script:
+    - mkdir -p /etc/nginx/default.d /etc/nginx/conf.d/saa01_confd /etc/nginx/ssl/saa01_ssl
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/default.d /etc/nginx/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/acls/${CI_BUILD_SITE}_acls /etc/nginx/acls/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd /etc/nginx/conf.d/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl /etc/nginx/ssl
+    - nginx -t
+saa01_deploy:
+  stage: saa01_deploy
+  tags:
+    - gitlab-runner1-shell
+  image: 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+  needs:
+    - saa01_test
+  variables:
+    CI_BUILD_SITE: "saa01"
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+  script:
+    - chmod +x scripts/cicd/deployeks.sh
+    - ./scripts/cicd/deployeks.sh saa01 sa-east-1
+
+#-------------- eua03 -----------------------------------
+
+eua03_test:
+  stage: eua03_test
+  tags:
+    - gitlab-runner1-k8s
+  image: 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+  variables:
+    CI_BUILD_SITE: "eua03"
+  rules:
+    - changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+  script:
+    - mkdir -p /etc/nginx/default.d /etc/nginx/conf.d/eua03_confd /etc/nginx/ssl/eua03_ssl
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/default.d /etc/nginx/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/acls/${CI_BUILD_SITE}_acls /etc/nginx/acls/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd /etc/nginx/conf.d/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl /etc/nginx/ssl
+    - nginx -t
+eua03_deploy:
+  stage: eua03_deploy
+  tags:
+    - gitlab-runner1-shell
+  image: 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+  needs:
+    - eua03_test
+  variables:
+    CI_BUILD_SITE: "eua03"
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+  script:
+    - chmod +x scripts/cicd/deployeks.sh
+    - ./scripts/cicd/deployeks.sh eua03 eu-west-2
+
+#-------------- awsva -----------------------------------
+
+awsva_test:
+  stage: awsva_test
+  tags:
+    - gitlab-runner1-k8s
+  image: 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+  variables:
+    CI_BUILD_SITE: "awsva"
+  rules:
+    - changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+  script:
+    - mkdir -p /etc/nginx/default.d /etc/nginx/conf.d/awsva_confd /etc/nginx/ssl/awsva_ssl
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/default.d /etc/nginx/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/acls/${CI_BUILD_SITE}_acls /etc/nginx/acls/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd /etc/nginx/conf.d/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl /etc/nginx/ssl
+    - nginx -t
+awsva_deploy:
+  stage: awsva_deploy
+  tags:
+    - gitlab-runner1-shell
+  image: 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+  needs:
+    - awsva_test
+  variables:
+    CI_BUILD_SITE: "awsva"
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+  script:
+    - chmod +x scripts/cicd/deployeks.sh
+    - ./scripts/cicd/deployeks.sh awsva us-east-1
+
+#-------------- awstok -----------------------------------
+
+awstok_test:
+  stage: awstok_test
+  tags:
+    - gitlab-runner1-k8s
+  image: 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+  variables:
+    CI_BUILD_SITE: "awstok"
+  rules:
+    - changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+  script:
+    - mkdir -p /etc/nginx/default.d /etc/nginx/conf.d/awstok_confd /etc/nginx/ssl/awstok_ssl
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/default.d /etc/nginx/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/acls/${CI_BUILD_SITE}_acls /etc/nginx/acls/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd /etc/nginx/conf.d/
+    - cp -rv ${CI_PROJECT_DIR}/kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl /etc/nginx/ssl
+    - nginx -t
+awstok_deploy:
+  stage: awstok_deploy
+  tags:
+    - gitlab-runner1-shell
+  image: 402192950540.dkr.ecr.us-east-1.amazonaws.com/nginx:latest
+  needs:
+    - awstok_test
+  variables:
+    CI_BUILD_SITE: "awstok"
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - kubernetes/nginx/acls/${CI_BUILD_SITE}_acls/*
+        - kubernetes/nginx/conf.d/${CI_BUILD_SITE}_confd/*
+        - kubernetes/nginx/ssl/${CI_BUILD_SITE}_ssl/*
+  script:
+    - chmod +x scripts/cicd/deployeks.sh
+    - ./scripts/cicd/deployeks.sh awstok ap-northeast-1
